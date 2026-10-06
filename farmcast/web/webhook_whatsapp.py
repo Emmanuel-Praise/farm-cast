@@ -37,13 +37,38 @@ def parse_intent(text: str) -> str:
 
 
 def extract_place(text: str) -> str:
-    """Strip intent/time keywords; remainder is the place name."""
+    """Strip intent/time/filler words; remainder is the place name."""
     t = (text or "").lower()
+    t = re.sub(r"'s\b", " ", t)  # "what's" -> "what"
     t = re.sub(r"\b(rain|weather|forecast|how weather|plant|sow|when plant|spray|"
                r"herbicide|pesticide|fertili[sz]er|manure|apply|dry|drought|water|"
-               r"help|menu|what can you do|for|in|at|today|tomorrow|week|the)\b", " ", t)
+               r"help|menu|what can you do|for|in|at|today|tomorrow|week|the|a|an|"
+               r"how|is|are|was|were|will|would|can|could|it|its|there|their|my|"
+               r"area|side|farm|village|home|here|there|please|do|does|did|what|"
+               r"like|tell|me|know|give|s|of|on|this)\b", " ", t)
     t = re.sub(r"[?.,!]", " ", t)
     return " ".join(t.split())
+
+
+SELF_RE = re.compile(
+    r"\b(my (area|farm|side|village|place|location|home)|at home|around here)\b"
+    r"|\brain (at|for|in) (my|here)\b|\bhere\b.*\b(rain|weather)\b"
+    r"|\b(rain|weather)\b.*\bhere\b")
+
+
+def is_self_reference(text: str) -> bool:
+    return bool(SELF_RE.search((text or "").lower()))
+
+
+def _own_sel(farmer: dict) -> dict:
+    con = repo.connect()
+    L = con.execute("SELECT * FROM localities WHERE id=?",
+                    (farmer["locality_id"],)).fetchone()
+    con.close()
+    L = dict(L)
+    return {"name": L["name"], "lat": L["lat"], "lon": L["lon"],
+            "elevation_m": L.get("elevation_m") or 0,
+            "division": L.get("division") or "", "id": L["id"]}
 
 
 def parse_yes_no(text: str) -> str:
@@ -120,22 +145,18 @@ def answer_query(phone: str, text: str) -> str:
         from farmcast.core import ai as _ai
         return _ai.chat(text, farmer) or t.get("help_menu", "")
 
-    # 3. on-demand: extract place or default to own locality
+    # 3. on-demand: "my area / my farm / here" or no place -> own locality
     place_q = extract_place(text)
-    if not place_q:
-        con = repo.connect()
-        L = con.execute("SELECT * FROM localities WHERE id=?",
-                        (farmer["locality_id"],)).fetchone()
-        con.close()
-        L = dict(L)
-        sel = {"name": L["name"], "lat": L["lat"], "lon": L["lon"],
-               "elevation_m": L.get("elevation_m") or 0,
-               "division": L.get("division") or "", "id": L["id"]}
-        return _answer_for_locality(farmer, text, intent, sel, t)
+    if is_self_reference(text) or not place_q:
+        return _answer_for_locality(farmer, text, intent, _own_sel(farmer), t)
 
     res = resolve_location(place_q)
     if res.status == "not_found":
-        return t.get("unknown_place", "Unknown place.")
+        # Never dead-end: answer for the farmer's own area and say so.
+        own = _own_sel(farmer)
+        note = (f"I couldn't find '{place_q}'. "
+                f"Here is your area ({own['name']}) instead:\n")
+        return note + _answer_for_locality(farmer, text, intent, own, t)
     if res.status == "ambiguous":
         opts = [{"name": o.name, "lat": o.lat, "lon": o.lon,
                  "elevation_m": o.elevation_m, "division": o.division}
@@ -206,9 +227,14 @@ def _answer_for_locality(farmer: dict, raw_text: str, intent: str,
     elif intent == "DRY":
         body = f"{t.get('forecast_dryspell', '')} ({L['name']})"
     else:
+        # "today" asks get next-24h figures; otherwise the standard 48h outlook.
+        today = bool(re.search(r"\btoday\b", (raw_text or "").lower()))
+        mm = round(fc.p24 * bias, 1) if today else p48
         body = render_broadcast(farmer.get("name") or "farmer", L["name"],
-                                cat, p48, farmer.get("crop") or "maize",
+                                cat, mm, farmer.get("crop") or "maize",
                                 {"flags": fl}, farmer.get("language") or "english")
+        if today:
+            body += "\nFigures are for today (next 24 hours)."
     con = repo.connect()
     con.execute("INSERT INTO queries(farmer_id,raw_text,intent,resolved_locality_id,"
                 "response) VALUES(?,?,?, ?,?)",
