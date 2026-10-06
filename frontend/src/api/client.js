@@ -21,6 +21,7 @@ async function handle(res, path) {
 export const api = {
   stats: (t) => fetch(`${BASE}/admin/stats`, { headers: headers(t) }).then((r) => handle(r, '/admin/stats')),
   localities: (t) => fetch(`${BASE}/admin/localities`, { headers: headers(t) }).then((r) => handle(r, '/admin/localities')),
+  zones: (t) => fetch(`${BASE}/admin/zones`, { headers: headers(t) }).then((r) => handle(r, '/admin/zones')),
   reports: (t) => fetch(`${BASE}/admin/reports`, { headers: headers(t) }).then((r) => handle(r, '/admin/reports')),
   messages: (t) => fetch(`${BASE}/admin/messages`, { headers: headers(t) }).then((r) => handle(r, '/admin/messages')),
   callList: (t) => fetch(`${BASE}/admin/call-list`, { headers: headers(t) }).then((r) => handle(r, '/admin/call-list')),

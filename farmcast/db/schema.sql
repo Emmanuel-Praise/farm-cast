@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS localities (
   lat           REAL NOT NULL,
   lon           REAL NOT NULL,
   elevation_m   INTEGER,
+  elev_source   TEXT DEFAULT 'seed-estimate', -- 'seed-estimate' | 'geocoding-api' | 'gps'
   manual_bias   REAL DEFAULT 1.0,
   source        TEXT,
   verified      INTEGER DEFAULT 0,

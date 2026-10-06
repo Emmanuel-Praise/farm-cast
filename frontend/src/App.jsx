@@ -5,7 +5,7 @@ import TokenBar from './components/TokenBar.jsx';
 import DashboardView from './views/Dashboard.jsx';
 import ZonesView from './views/Zones.jsx';
 import { ReportsView, BroadcastsView, CallListView } from './views/Tables.jsx';
-import { ZONES, hhmm } from './components/shared.jsx';
+import { zoneAlt, hhmm } from './components/shared.jsx';
 import { api } from './api/client.js';
 
 const TITLES = {
@@ -26,6 +26,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [callList, setCallList] = useState([]);
   const [zoneData, setZoneData] = useState({});
+  const [zones, setZones] = useState([]);
   const [forecastOut, setForecastOut] = useState(null);
   const [error, setError] = useState('');
 
@@ -34,26 +35,20 @@ export default function App() {
     try {
       const s = await api.stats(token);
       setStats(s);
-      const [locs, reps, msgs, call] = await Promise.all([
+      const [locs, reps, msgs, call, zs] = await Promise.all([
         api.localities(token),
         api.reports(token),
         api.messages(token),
         api.callList(token),
+        api.zones(token),
       ]);
       setLocalities(locs);
       setReports(reps);
       setMessages(msgs);
       setCallList(call);
+      setZones(zs);
       const zd = {};
-      await Promise.all(
-        ZONES.map(async (z) => {
-          try {
-            zd[z.name] = await api.forecast(token, z.name);
-          } catch {
-            zd[z.name] = null;
-          }
-        }),
-      );
+      zs.forEach((z) => { zd[z.zone] = z; });
       setZoneData(zd);
     } catch (e) {
       setError(`${e.message} — set ADMIN_TOKEN and press Refresh`);
@@ -63,6 +58,11 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('fc_admin_token', token);
   }, [token]);
+
+  useEffect(() => {
+    if (localStorage.getItem('fc_admin_token')) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const locName = {};
   localities.forEach((l) => { locName[l.id] = l.name; });
@@ -78,27 +78,27 @@ export default function App() {
   const counts = {};
   (stats?.per_locality || []).forEach((l) => { counts[l.name] = l.n; });
 
-  const zoneRows = ZONES.map((z) => {
-    const d = zoneData[z.name];
-    const last = enriched.find((r) => r.locality === z.name);
+  const locDiv = {};
+  localities.forEach((l) => { locDiv[l.id] = l.division || ''; });
+
+  const zoneRows = zones.map((z) => {
+    const last = enriched.find((r) => locDiv[r.locality_id] === z.zone);
     let ago = '';
     if (last?.received_at) {
       const mins = Math.max(0, Math.round((Date.now() - new Date(last.received_at).getTime()) / 60000));
       ago = mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} hr ago`;
     }
     return {
-      ...z,
-      p48: d?.forecast?.p48 ?? null,
-      prob: d?.forecast?.prob_max ?? null,
-      category: d?.category ?? null,
-      farmers: counts[z.name] || 0,
-      last: ago,
+      name: z.zone,
+      alt: zoneAlt(z.zone, z.elev_m, z.localities),
+      p48: z.p48, prob: z.prob_max, category: z.category,
+      farmers: z.farmers, last: ago,
     };
   });
 
   const feed = enriched.slice(0, 8);
   const subtitle = stats
-    ? `Collecting ground truth from <b>${stats.farmers} farmers</b> across 3 micro-climate zones · Updated ${new Date().toTimeString().slice(0, 5)}`
+    ? `Collecting ground truth from <b>${stats.farmers} farmers</b> across ${zones.length} zones · Updated ${new Date().toTimeString().slice(0, 5)}`
     : 'Connect API token to load live data.';
 
   const onDryRun = async () => {
@@ -144,7 +144,7 @@ export default function App() {
           {view === 'reports' ? <ReportsView reports={enriched.slice(0, 100)} stats={stats} /> : null}
         </div>
         <div className={'view' + (view === 'zones' ? ' active' : '')}>
-          {view === 'zones' ? <ZonesView zoneData={zoneData} counts={counts} /> : null}
+          {view === 'zones' ? <ZonesView zones={zones} /> : null}
         </div>
         <div className={'view' + (view === 'broadcasts' ? ' active' : '')}>
           {view === 'broadcasts' ? <BroadcastsView messages={messages} /> : null}

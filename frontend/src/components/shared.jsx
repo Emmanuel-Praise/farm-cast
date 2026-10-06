@@ -1,11 +1,23 @@
 import React from 'react';
 import { ChatIcon, SmsIcon } from '../components/icons.jsx';
 
-export const ZONES = [
-  { name: 'Bafut', alt: '1,450 m · mid-altitude' },
-  { name: 'Santa', alt: '1,820 m · highland' },
-  { name: 'Ndop', alt: '1,200 m · lowland plain' },
-];
+export const ZONE_ALTS = {
+  Mezam: 'mid-altitude · capital Bamenda',
+  Momo: 'western highlands',
+  Bui: 'highland · Nso plateau',
+  Boyo: 'highland',
+  'Donga-Mantung': 'northern highlands',
+  Menchum: 'lowland valleys',
+  'Ngo-Ketunjia': 'lowland plain',
+};
+
+export function zoneAlt(zone, elev, n) {
+  const bits = [];
+  if (elev) bits.push(`${Number(elev).toLocaleString()} m`);
+  if (ZONE_ALTS[zone]) bits.push(ZONE_ALTS[zone]);
+  bits.push(`${n} ${n === 1 ? 'locality' : 'localities'}`);
+  return bits.join(' · ');
+}
 
 export function statusFor(category) {
   switch (category) {
@@ -39,9 +51,7 @@ export function ChannelTag({ channel }) {
   );
 }
 
-export function ZoneChip({ name }) {
-  const n = (name || '').toLowerCase();
-  const kind = n.includes('santa') ? 'warn' : n.includes('ndop') ? 'dry' : 'ok';
+export function ZoneChip({ name, kind = 'neutral' }) {
   return <span className={`chip ${kind}`}>{name}</span>;
 }
 

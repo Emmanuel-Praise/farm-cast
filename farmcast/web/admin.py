@@ -80,6 +80,45 @@ def localities(x_admin_token: str | None = Header(default=None)):
     return [dict(r) for r in rows]
 
 
+@router.get("/zones")
+def zones(x_admin_token: str | None = Header(default=None)):
+    """Live forecast per zone (division). One batched Open-Meteo call, cached daily."""
+    guard(x_admin_token)
+    from farmcast.core import zones as Z
+    zs = Z.all_zones()
+    if not zs:
+        return []
+    places = [{"key": z["division"], "lat": z["lat"], "lon": z["lon"],
+               "elev": z["elev"] or 0} for z in zs]
+    fc = fetch_places(places)
+    con = repo.connect()
+    counts = {r["division"]: r["n"] for r in con.execute(
+        """SELECT l.division AS division, COUNT(f.id) AS n FROM localities l
+           LEFT JOIN farmers f ON f.locality_id=l.id AND f.active=1
+           GROUP BY l.division""").fetchall()}
+    elev = {r["division"]: r["sources"] for r in con.execute(
+        "SELECT division, GROUP_CONCAT(DISTINCT elev_source) AS sources "
+        "FROM localities GROUP BY division").fetchall()}
+    con.close()
+    out = []
+    for z in zs:
+        f = fc[z["division"]]
+        cat = R.categorize(f.p48, f.daily or [])
+        out.append({
+            "zone": z["division"], "localities": z["localities"],
+            "farmers": counts.get(z["division"], 0),
+            "lat": round(z["lat"], 4), "lon": round(z["lon"], 4),
+            "elev_m": int(z["elev"] or 0),
+            "elev_sources": (elev.get(z["division"]) or "").split(","),
+            "p24": f.p24, "p48": f.p48, "p72": f.p72,
+            "prob_max": f.prob_max, "tmin": f.tmin, "tmax": f.tmax,
+            "wind_max": f.wind_max, "daily": f.daily,
+            "category": cat,
+            "flags": R.flags(f.tmin, z["elev"] or 0, f.wind_max, f.p48, f.p24),
+        })
+    return out
+
+
 @router.get("/forecast")
 def forecast(place: str, x_admin_token: str | None = Header(default=None)):
     guard(x_admin_token)

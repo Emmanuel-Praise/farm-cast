@@ -1,7 +1,8 @@
 import React from 'react';
-import { ZONES, statusFor, FeedList } from '../components/shared.jsx';
+import { statusFor, FeedList } from '../components/shared.jsx';
 
 export default function DashboardView({ stats, zoneRows, feed }) {
+  const names = zoneRows.map((z) => z.name);
   const farmers = stats?.farmers ?? '–';
   const sent = stats?.sent_today ?? 0;
   const failed = stats?.failed_today ?? 0;
@@ -11,7 +12,7 @@ export default function DashboardView({ stats, zoneRows, feed }) {
   const retrying = failed + callOpen;
   const counts = {};
   (stats?.per_locality || []).forEach((l) => { counts[l.name] = l.n; });
-  const top = [...ZONES].sort((a, b) => (counts[b.name] || 0) - (counts[a.name] || 0));
+  const top = [...names].sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
   const lead = top[0];
 
   return (
@@ -20,7 +21,7 @@ export default function DashboardView({ stats, zoneRows, feed }) {
         <div className="kpi">
           <div className="lbl">Total farmers</div>
           <div className="val">{farmers}</div>
-          <div className="sub">across 3 micro-climate zones</div>
+          <div className="sub">across {names.length} zones · every NW division</div>
         </div>
         <div className="kpi">
           <div className="lbl">Ground reports today</div>
@@ -42,7 +43,7 @@ export default function DashboardView({ stats, zoneRows, feed }) {
             <div className="card-head">
               <div>
                 <h2>Zone monitor — 48h outlook</h2>
-                <div className="hint">Same day, three different micro-climates</div>
+                <div className="hint">Same day, every Northwest zone · live forecast</div>
               </div>
               <span className="chip neutral">Live</span>
             </div>
@@ -101,10 +102,10 @@ export default function DashboardView({ stats, zoneRows, feed }) {
               <span className="chip neutral">{farmers} total</span>
             </div>
             <div className="zone-dist">
-              {ZONES.map((z, i) => {
-                const n = counts[z.name] || 0;
+              {zoneRows.map((z, i) => {
+                const n = counts[z.name] || z.farmers || 0;
                 const share = farmers ? Math.round((n / farmers) * 100) : 0;
-                const bar = ['amber', 'blue', ''][ZONES.indexOf(z)] || '';
+                const bar = ['amber', 'blue', ''][i % 3] || '';
                 return (
                   <div className="zd-row" key={z.name}>
                     <div className="zd-top"><b>{z.name}</b><span>{n} · {share}%</span></div>
@@ -114,8 +115,8 @@ export default function DashboardView({ stats, zoneRows, feed }) {
               })}
             </div>
             <div style={{ marginTop: 16, fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>
-              {lead && (counts[lead.name] || 0) > 0
-                ? `${lead.name} has the largest farmer base (${counts[lead.name]} farmers).`
+              {lead && (counts[lead] || 0) > 0
+                ? `${lead} has the largest farmer base (${counts[lead]} farmers).`
                 : 'Register farmers to see the per-zone breakdown.'}
             </div>
           </div>

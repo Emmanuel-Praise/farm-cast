@@ -182,7 +182,9 @@ def _compose(farmer_ctx: dict, question: str, weather: dict | None = None,
         user += (f"KEY FACT (must appear verbatim in your reply): {key_fact}\n"
                  f"WEATHER: {json.dumps(weather)}\nADVICE: {weather.get('advice', '')}\n")
     if ask_area:
-        user += "ASK_AREA: true (no usable place was given)\n"
+        user += ("ASK_AREA: true (no usable place was given). Ask which village or town. "
+                 "Also mention they can tap attach → Location in WhatsApp and send "
+                 "their current location instead.\n")
     if options:
         user += f"OPTIONS: {json.dumps([{'name': o.get('name'), 'division': o.get('division')} for o in options])}\n"
     for attempt in range(2):
@@ -278,6 +280,22 @@ def _onboard_ask_place(text: str) -> str | None:
 def _handle_new_sender(phone: str, text: str) -> str:
     """Auto-registration: first text -> name -> location -> daily reports."""
     ob = _onboard_get(phone)
+    if ob and ob.get("step") == "location-gps":
+        # Name arriving after a shared GPS pin: finish with stashed locality.
+        try:
+            stashed = json.loads(ob.get("options") or "[]")
+        except Exception:
+            stashed = []
+        gps = next((o for o in stashed if o.get("gps")), None)
+        name = extract_name(text)
+        if name and gps:
+            return _finish_onboarding(phone, name, gps)
+        area = (stashed[0].get("name") if stashed else "your area")
+        out = ai_client.chat_raw(
+            COMPOSE_SYSTEM,
+            f"A new farmer near {area} replied '{text}' when asked for their name. "
+            "Ask for their name again, simply.")
+        return out.strip() if out else "Sorry, I didn't get your name. What is your name?"
     if not ob:
         _onboard_save(phone, "name")
         out = ai_client.chat_raw(
@@ -335,8 +353,10 @@ def _handle_new_sender(phone: str, text: str) -> str:
     out = ai_client.chat_raw(
         COMPOSE_SYSTEM,
         f"{name} said their farm is in '{place}' but I can't find that place. "
-        "Ask them to try another nearby village or town name.")
-    return out.strip() if out else f"I couldn't find '{place}'. Try another nearby village name."
+        "Ask them to try another nearby village or town name, or to tap attach "
+        "→ Location in WhatsApp and send their current location.")
+    return out.strip() if out else (f"I couldn't find '{place}'. Try another nearby "
+                                    "village name, or send your live location via attach → Location.")
 
 
 def _finish_onboarding(phone: str, name: str, sel: dict) -> str:
@@ -364,6 +384,50 @@ def _finish_onboarding(phone: str, name: str, sel: dict) -> str:
         return body
     return (f"Welcome {name}. You will now get a weather report every morning "
             f"at 6 o'clock for {sel['name']}.")
+
+def respond_location(phone: str, lat: float, lon: float, label: str = "") -> str:
+    """Farmer shared a WhatsApp live location. Classify zone, save, forecast."""
+    from farmcast.core import zones as Z
+    try:
+        lat, lon = float(lat), float(lon)
+    except (TypeError, ValueError):
+        return "I couldn't read that location. Please try sharing it again."
+    place = Z.classify_coords(lat, lon)
+    zone = place.get("zone") or place.get("division") or "Unverified"
+    sel = {"name": place["name"], "lat": place["lat"], "lon": place["lon"],
+           "elevation_m": place.get("elevation_m") or 0,
+           "division": place.get("division") or "", "id": place["id"]}
+    farmer = repo.find_farmer_by_phone(phone)
+    if farmer:
+        try:
+            con = repo.connect()
+            con.execute("UPDATE farmers SET locality_id=?, lat=?, lon=? WHERE id=?",
+                        (place["id"], lat, lon, farmer["id"]))
+            con.commit()
+            con.close()
+        except Exception as e:
+            print(f"[agent] gps save failed: {e}")
+        farmer["locality_id"] = place["id"]
+        ctx = _ctx(farmer)
+        payload = _weather_payload(sel, "48h", farmer.get("crop") or "maize")
+        q = (f"The farmer shared their live location near {label or place['name']}. "
+             f"ZONE (division): {zone}. Confirm you pinned them to {place['name']} "
+             f"in the {zone} zone and give the forecast.")
+        body = _compose(ctx, q, weather=payload)
+        if body:
+            _log(farmer["id"], f"GPS {lat},{lon}", "GPS", place["id"], body,
+                 payload["forecast_id"])
+            return body
+        return (f"Got your location: {place['name']} ({zone} zone). "
+                f"{payload['mm']}mm in the {payload['mm_label']}.")
+    # Unknown sender: stash GPS, still need their name.
+    _onboard_save(phone, "location-gps", name="", options=[{**sel, "gps": True}])
+    out = ai_client.chat_raw(
+        COMPOSE_SYSTEM,
+        f"A new farmer just shared their live location: {place['name']} ({zone} zone). "
+        "Welcome them, mention the area by name, and ask their name. Max 300 characters.")
+    return out.strip() if out else (f"Welcome. I see you're near {place['name']}. "
+                                    "What is your name?")
 
 def respond(phone: str, text: str) -> str:
     """Main entry: model-first reply. Never raises; never returns empty."""

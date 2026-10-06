@@ -76,6 +76,17 @@ async def inbound(req: Request):
                         else:
                             reply = ("Sorry, I could not hear your voice note. "
                                      "Please type your message.")
+                    elif mtype == "location":
+                        loc = msg.get("location") or {}
+                        try:
+                            from farmcast.core.agent import respond_location
+                            reply = respond_location(
+                                sender, loc.get("latitude"), loc.get("longitude"),
+                                loc.get("name") or loc.get("address") or "")
+                        except Exception as e:
+                            print(f"[webhook] gps failed: {e}")
+                            reply = ("I couldn't read that location. "
+                                     "Please try sharing it again.")
                     elif mtype == "image":
                         data, mime = get_media_bytes((msg.get("image") or {}).get("id", ""))
                         farmer = repo.find_farmer_by_phone(sender)
