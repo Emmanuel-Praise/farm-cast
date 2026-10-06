@@ -3,13 +3,15 @@ import Sidebar from './components/Sidebar.jsx';
 import Topbar from './components/Topbar.jsx';
 import TokenBar from './components/TokenBar.jsx';
 import DashboardView from './views/Dashboard.jsx';
-import { ReportsView, LocalitiesView, BroadcastsView, CallListView } from './views/Tables.jsx';
+import ZonesView from './views/Zones.jsx';
+import { ReportsView, BroadcastsView, CallListView } from './views/Tables.jsx';
+import { ZONES, hhmm } from './components/shared.jsx';
 import { api } from './api/client.js';
 
 const TITLES = {
   dashboard: 'System Overview',
   reports: 'Farmer Reports',
-  zones: 'Localities',
+  zones: 'Zones & Micro-climates',
   broadcasts: 'Broadcast Runs',
   calllist: 'Call List',
 };
@@ -23,16 +25,15 @@ export default function App() {
   const [reports, setReports] = useState([]);
   const [messages, setMessages] = useState([]);
   const [callList, setCallList] = useState([]);
+  const [zoneData, setZoneData] = useState({});
   const [forecastOut, setForecastOut] = useState(null);
   const [error, setError] = useState('');
-  const [apiState, setApiState] = useState('API: not connected');
 
   const load = useCallback(async () => {
     setError('');
     try {
       const s = await api.stats(token);
       setStats(s);
-      setApiState(`API: connected · ${s.date}`);
       const [locs, reps, msgs, call] = await Promise.all([
         api.localities(token),
         api.reports(token),
@@ -43,9 +44,19 @@ export default function App() {
       setReports(reps);
       setMessages(msgs);
       setCallList(call);
+      const zd = {};
+      await Promise.all(
+        ZONES.map(async (z) => {
+          try {
+            zd[z.name] = await api.forecast(token, z.name);
+          } catch {
+            zd[z.name] = null;
+          }
+        }),
+      );
+      setZoneData(zd);
     } catch (e) {
-      setApiState('API: not connected');
-      setError(`${e.message} — set ADMIN_TOKEN and run uvicorn farmcast.web.app:app`);
+      setError(`${e.message} — set ADMIN_TOKEN and press Refresh`);
     }
   }, [token]);
 
@@ -53,10 +64,46 @@ export default function App() {
     localStorage.setItem('fc_admin_token', token);
   }, [token]);
 
+  const locName = {};
+  localities.forEach((l) => { locName[l.id] = l.name; });
+  const chanByFarmer = {};
+  messages.forEach((m) => { if (!(m.farmer_id in chanByFarmer)) chanByFarmer[m.farmer_id] = m.channel || 'whatsapp'; });
+
+  const enriched = reports.map((r) => ({
+    ...r,
+    locality: locName[r.locality_id] || '',
+    channel: chanByFarmer[r.farmer_id] || 'whatsapp',
+  }));
+
+  const counts = {};
+  (stats?.per_locality || []).forEach((l) => { counts[l.name] = l.n; });
+
+  const zoneRows = ZONES.map((z) => {
+    const d = zoneData[z.name];
+    const last = enriched.find((r) => r.locality === z.name);
+    let ago = '';
+    if (last?.received_at) {
+      const mins = Math.max(0, Math.round((Date.now() - new Date(last.received_at).getTime()) / 60000));
+      ago = mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} hr ago`;
+    }
+    return {
+      ...z,
+      p48: d?.forecast?.p48 ?? null,
+      prob: d?.forecast?.prob_max ?? null,
+      category: d?.category ?? null,
+      farmers: counts[z.name] || 0,
+      last: ago,
+    };
+  });
+
+  const feed = enriched.slice(0, 8);
+  const subtitle = stats
+    ? `Collecting ground truth from <b>${stats.farmers} farmers</b> across 3 micro-climate zones · Updated ${new Date().toTimeString().slice(0, 5)}`
+    : 'Connect API token to load live data.';
+
   const onDryRun = async () => {
     try {
-      const j = await api.broadcastDryRun(token);
-      setForecastOut(j);
+      setForecastOut(await api.broadcastDryRun(token));
     } catch (e) {
       setError(e.message);
     }
@@ -65,8 +112,7 @@ export default function App() {
   const onForecast = async () => {
     if (!place.trim()) return;
     try {
-      const j = await api.forecast(token, place.trim());
-      setForecastOut(j);
+      setForecastOut(await api.forecast(token, place.trim()));
     } catch (e) {
       setError(e.message);
     }
@@ -79,22 +125,11 @@ export default function App() {
         onNav={(n) => setView(n.id)}
         counts={{
           reports: stats?.reports_today,
-          localities: localities.length || undefined,
           call: stats?.call_list_open,
         }}
-        apiState={apiState}
       />
       <main>
-        <Topbar
-          title={TITLES[view]}
-          subtitle={
-            stats
-              ? `${stats.farmers} farmers across ${stats.localities} localities · ${stats.date}`
-              : 'Connect API token to load live data.'
-          }
-          onRefresh={load}
-          onDryRun={onDryRun}
-        />
+        <Topbar title={TITLES[view]} subtitle={subtitle} onRefresh={load} onDryRun={onDryRun} />
         <TokenBar token={token} setToken={setToken} place={place} setPlace={setPlace} onForecast={onForecast} />
         {error ? <div className="error">{error}</div> : null}
         {forecastOut ? (
@@ -103,13 +138,13 @@ export default function App() {
           </div>
         ) : null}
         <div className={'view' + (view === 'dashboard' ? ' active' : '')}>
-          {view === 'dashboard' ? <DashboardView stats={stats} /> : null}
+          {view === 'dashboard' ? <DashboardView stats={stats} zoneRows={zoneRows} feed={feed} /> : null}
         </div>
         <div className={'view' + (view === 'reports' ? ' active' : '')}>
-          {view === 'reports' ? <ReportsView reports={reports} /> : null}
+          {view === 'reports' ? <ReportsView reports={enriched.slice(0, 100)} stats={stats} /> : null}
         </div>
         <div className={'view' + (view === 'zones' ? ' active' : '')}>
-          {view === 'zones' ? <LocalitiesView localities={localities} /> : null}
+          {view === 'zones' ? <ZonesView zoneData={zoneData} counts={counts} /> : null}
         </div>
         <div className={'view' + (view === 'broadcasts' ? ' active' : '')}>
           {view === 'broadcasts' ? <BroadcastsView messages={messages} /> : null}

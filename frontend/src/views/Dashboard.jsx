@@ -1,76 +1,123 @@
 import React from 'react';
-import { Chip, initials } from '../components/Chip.jsx';
+import { ZONES, statusFor, FeedList } from '../components/shared.jsx';
 
-export default function DashboardView({ stats }) {
-  if (!stats) return <div className="card"><div className="hint">Enter ADMIN_TOKEN and press Refresh.</div></div>;
+export default function DashboardView({ stats, zoneRows, feed }) {
+  const farmers = stats?.farmers ?? '–';
+  const sent = stats?.sent_today ?? 0;
+  const failed = stats?.failed_today ?? 0;
+  const callOpen = stats?.call_list_open ?? 0;
+  const total = sent + failed;
+  const pct = total ? Math.round((sent / total) * 1000) / 10 : 0;
+  const retrying = failed + callOpen;
+  const counts = {};
+  (stats?.per_locality || []).forEach((l) => { counts[l.name] = l.n; });
+  const top = [...ZONES].sort((a, b) => (counts[b.name] || 0) - (counts[a.name] || 0));
+  const lead = top[0];
+
   return (
     <>
       <div className="kpis">
         <div className="kpi">
           <div className="lbl">Total farmers</div>
-          <div className="val">{stats.farmers}</div>
-          <div className="sub">{stats.localities} localities</div>
+          <div className="val">{farmers}</div>
+          <div className="sub">across 3 micro-climate zones</div>
         </div>
         <div className="kpi">
           <div className="lbl">Ground reports today</div>
-          <div className="val">{stats.reports_today}</div>
-          <div className="sub">farmer YES/NO replies</div>
+          <div className="val">{stats?.reports_today ?? '–'}</div>
+          <div className="sub">farmer replies in</div>
         </div>
         <div className="kpi">
-          <div className="lbl">Alerts delivered</div>
-          <div className="val">{stats.sent_today}</div>
-          <div className="sub">{stats.failed_today} failed</div>
+          <div className="lbl">Alerts delivered 6 AM</div>
+          <div className="val">{sent}<small> / {farmers}</small></div>
+          <div className="sub">
+            <span className="down">{retrying}</span> retrying · {failed} failed
+          </div>
         </div>
       </div>
+
       <div className="cols">
         <div className="col">
           <div className="card">
             <div className="card-head">
               <div>
-                <h2>Locality monitor</h2>
-                <div className="hint">Dynamic — every village, not 3 fixed zones</div>
+                <h2>Zone monitor — 48h outlook</h2>
+                <div className="hint">Same day, three different micro-climates</div>
               </div>
-              <Chip>Live</Chip>
+              <span className="chip neutral">Live</span>
             </div>
             <table>
-              <thead><tr><th>Locality</th><th>Farmers</th><th>Division</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Zone</th><th>48h rain</th><th>Rain chance</th>
+                  <th>Farmers</th><th>Last report</th><th>Status</th>
+                </tr>
+              </thead>
               <tbody>
-                {stats.per_locality.map((l) => (
-                  <tr key={l.name}><td><b>{l.name}</b></td><td>{l.n}</td><td>{l.division || ''}</td></tr>
-                ))}
+                {zoneRows.map((z) => {
+                  const st = statusFor(z.category);
+                  return (
+                    <tr key={z.name}>
+                      <td className="zone-name">{z.name} <small>{z.alt}</small></td>
+                      <td><b>{z.p48 != null ? `${z.p48} mm` : '–'}</b></td>
+                      <td>{z.prob != null ? `${Math.round(z.prob)}%` : '–'}</td>
+                      <td>{z.farmers}</td>
+                      <td>{z.last || '–'}</td>
+                      <td><span className={`chip ${st.kind}`}>{st.label}</span></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+
           <div className="card">
             <div className="card-head">
-              <div><h2>Incoming ground reports</h2></div>
-              <Chip kind="ok">{stats.reports_today} today</Chip>
-            </div>
-            {stats.recent_reports.map((r) => (
-              <div className="feed-item" key={r.id}>
-                <div className="avatar">{initials(r.farmer_name)}</div>
-                <div className="feed-body">
-                  <b>{r.farmer_name || `farmer ${r.farmer_id}`}</b>{' '}
-                  <Chip kind={r.reply === 'YES' ? 'ok' : 'dry'}>{r.reply}</Chip>
-                  <div className="feed-msg">{r.raw_text || ''}</div>
-                  <div className="feed-meta">{r.received_at || ''}</div>
-                </div>
+              <div>
+                <h2>Incoming ground reports</h2>
+                <div className="hint">Farmers replying to yesterday&apos;s rain check</div>
               </div>
-            ))}
+              <span className="chip ok">{stats?.reports_today ?? 0} today</span>
+            </div>
+            <FeedList items={feed} />
           </div>
         </div>
+
         <div className="col">
           <div className="card">
-            <div className="card-head"><h2>Today&apos;s 6 AM broadcast</h2><Chip kind="ok">WhatsApp text-only</Chip></div>
-            <div className="stat-row"><span>Sent/delivered today</span><b>{stats.sent_today}</b></div>
-            <div className="stat-row"><span>Failed</span><b>{stats.failed_today}</b></div>
-            <div className="stat-row"><span>Open call list</span><b>{stats.call_list_open}</b></div>
+            <div className="card-head">
+              <h2>Today&apos;s 6 AM broadcast</h2>
+              <span className="chip ok">Complete</span>
+            </div>
+            <div className="stat-row"><span>Messages sent</span><b>{sent} / {farmers}</b></div>
+            <div className="prog"><i style={{ width: `${pct}%` }}></i></div>
+            <div className="stat-row" style={{ marginTop: 12 }}><span>WhatsApp</span><b>{sent}</b></div>
+            <div className="stat-row"><span>Pending retry</span><b style={{ color: 'var(--amber)' }}>{retrying}</b></div>
           </div>
+
           <div className="card">
-            <div className="card-head"><h2>Farmers per locality</h2></div>
-            {stats.per_locality.slice(0, 10).map((l) => (
-              <div className="stat-row" key={l.name}><span>{l.name}</span><b>{l.n}</b></div>
-            ))}
+            <div className="card-head">
+              <h2>Farmers per zone</h2>
+              <span className="chip neutral">{farmers} total</span>
+            </div>
+            <div className="zone-dist">
+              {ZONES.map((z, i) => {
+                const n = counts[z.name] || 0;
+                const share = farmers ? Math.round((n / farmers) * 100) : 0;
+                const bar = ['amber', 'blue', ''][ZONES.indexOf(z)] || '';
+                return (
+                  <div className="zd-row" key={z.name}>
+                    <div className="zd-top"><b>{z.name}</b><span>{n} · {share}%</span></div>
+                    <div className={`zd-bar ${bar}`}><i style={{ width: `${share}%` }}></i></div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 16, fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+              {lead && (counts[lead.name] || 0) > 0
+                ? `${lead.name} has the largest farmer base (${counts[lead.name]} farmers).`
+                : 'Register farmers to see the per-zone breakdown.'}
+            </div>
           </div>
         </div>
       </div>
