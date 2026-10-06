@@ -40,6 +40,45 @@ def _post(url: str, headers: dict, payload: dict, timeout: int = 25) -> str:
     return ""
 
 
+def _run(messages: list, max_tokens: int = 300, temperature: float = 0.6) -> str:
+    """OpenRouter -> NVIDIA chain. Returns "" when all providers fail."""
+    if settings.OPENROUTER_API_KEY:
+        out = _post(
+            OPENROUTER_URL,
+            {"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+             "Content-Type": "application/json"},
+            {"model": settings.TEXT_MODEL, "messages": messages,
+             "max_tokens": max_tokens, "temperature": temperature},
+        )
+        if out:
+            return out
+    if settings.NVIDIA_API_KEY:
+        out = _post(
+            NVIDIA_URL,
+            {"Authorization": f"Bearer {settings.NVIDIA_API_KEY}",
+             "Content-Type": "application/json"},
+            {"model": settings.NVIDIA_TEXT_MODEL, "messages": messages,
+             "max_tokens": max_tokens, "temperature": temperature},
+        )
+        if out:
+            return out
+    return ""
+
+
+def chat_raw(system: str, user: str, max_tokens: int = 400,
+             temperature: float = 0.6) -> str:
+    """Direct system+user call for agent steps. Never raises, "" on failure."""
+    if not (user or "").strip():
+        return ""
+    try:
+        return _run([{"role": "system", "content": system},
+                     {"role": "user", "content": user}],
+                    max_tokens=max_tokens, temperature=temperature)
+    except Exception as e:
+        print(f"[AI] chat_raw failed: {e}")
+        return ""
+
+
 def chat(text: str, farmer: dict | None = None) -> str:
     """Conversational reply for non-weather messages. Returns "" if unavailable."""
     farmer = farmer or {}
@@ -50,33 +89,10 @@ def chat(text: str, farmer: dict | None = None) -> str:
         f"Farmer: {farmer.get('name') or 'farmer'}, "
         f"crop: {farmer.get('crop') or 'maize'}."
     )
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"{context}\nMessage: {user}"},
-    ]
-    # 1. OpenRouter primary
-    if settings.OPENROUTER_API_KEY:
-        out = _post(
-            OPENROUTER_URL,
-            {"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
-             "Content-Type": "application/json"},
-            {"model": settings.TEXT_MODEL, "messages": messages,
-             "max_tokens": 300, "temperature": 0.6},
-        )
-        if out:
-            return out
-    # 2. NVIDIA NIM fallback
-    if settings.NVIDIA_API_KEY:
-        out = _post(
-            NVIDIA_URL,
-            {"Authorization": f"Bearer {settings.NVIDIA_API_KEY}",
-             "Content-Type": "application/json"},
-            {"model": settings.NVIDIA_TEXT_MODEL, "messages": messages,
-             "max_tokens": 300, "temperature": 0.6},
-        )
-        if out:
-            return out
-    return ""
+    return _run(
+        [{"role": "system", "content": SYSTEM_PROMPT},
+         {"role": "user", "content": f"{context}\nMessage: {user}"}],
+        max_tokens=300, temperature=0.6)
 
 
 def describe_image(image_bytes: bytes, mime: str = "image/jpeg",

@@ -7,7 +7,8 @@ from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from farmcast.web.admin import router as admin_router
-from farmcast.web.webhook_whatsapp import answer_query
+from farmcast.web.webhook_whatsapp import answer_query as legacy_query
+from farmcast.core.agent import respond as agent_respond
 from farmcast.core.channels.whatsapp import send_text, send_audio, get_media_bytes
 from farmcast.core import speech as stt
 from farmcast.core import ai as farm_ai
@@ -57,13 +58,24 @@ async def inbound(req: Request):
                     mtype = msg.get("type", "")
                     reply = ""
                     if mtype == "text":
-                        reply = answer_query(sender, ((msg.get("text") or {}).get("body")) or "")
+                        body = ((msg.get("text") or {}).get("body")) or ""
+                        try:
+                            reply = agent_respond(sender, body)
+                        except Exception as e:
+                            print(f"[webhook] agent failed, legacy: {e}")
+                            reply = legacy_query(sender, body)
                     elif mtype == "audio":
                         data, mime = get_media_bytes((msg.get("audio") or {}).get("id", ""))
                         transcript = stt.transcribe(data, mime or "audio/ogg")
-                        reply = (answer_query(sender, transcript)
-                                 if transcript
-                                 else "Sorry, I could not hear your voice note. Please type your message.")
+                        if transcript:
+                            try:
+                                reply = agent_respond(sender, transcript)
+                            except Exception as e:
+                                print(f"[webhook] agent failed, legacy: {e}")
+                                reply = legacy_query(sender, transcript)
+                        else:
+                            reply = ("Sorry, I could not hear your voice note. "
+                                     "Please type your message.")
                     elif mtype == "image":
                         data, mime = get_media_bytes((msg.get("image") or {}).get("id", ""))
                         farmer = repo.find_farmer_by_phone(sender)
