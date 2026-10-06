@@ -12,8 +12,13 @@ export default function DashboardView({ stats, zoneRows, feed }) {
   const retrying = failed + callOpen;
   const counts = {};
   (stats?.per_locality || []).forEach((l) => { counts[l.name] = l.n; });
-  const top = [...names].sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-  const lead = top[0];
+  const byDiv = {};
+  zoneRows.forEach((z) => {
+    const d = z.division || 'Unverified';
+    byDiv[d] = (byDiv[d] || 0) + (counts[z.name] || z.farmers || 0);
+  });
+  const divNames = Object.keys(byDiv).sort((a, b) => byDiv[b] - byDiv[a]);
+  const lead = divNames[0];
 
   return (
     <>
@@ -21,7 +26,7 @@ export default function DashboardView({ stats, zoneRows, feed }) {
         <div className="kpi">
           <div className="lbl">Total farmers</div>
           <div className="val">{farmers}</div>
-          <div className="sub">across {names.length} zones · every NW division</div>
+          <div className="sub">across {names.length} areas · whole Northwest</div>
         </div>
         <div className="kpi">
           <div className="lbl">Ground reports today</div>
@@ -50,7 +55,7 @@ export default function DashboardView({ stats, zoneRows, feed }) {
             <table>
               <thead>
                 <tr>
-                  <th>Zone</th><th>48h rain</th><th>Rain chance</th>
+                  <th>Zone</th><th>Today</th><th>48h rain</th><th>Rain chance</th>
                   <th>Farmers</th><th>Last report</th><th>Status</th>
                 </tr>
               </thead>
@@ -60,6 +65,7 @@ export default function DashboardView({ stats, zoneRows, feed }) {
                   return (
                     <tr key={z.name}>
                       <td className="zone-name">{z.name} <small>{z.alt}</small></td>
+                      <td>{z.today || '–'}</td>
                       <td><b>{z.p48 != null ? `${z.p48} mm` : '–'}</b></td>
                       <td>{z.prob != null ? `${Math.round(z.prob)}%` : '–'}</td>
                       <td>{z.farmers}</td>
@@ -102,21 +108,21 @@ export default function DashboardView({ stats, zoneRows, feed }) {
               <span className="chip neutral">{farmers} total</span>
             </div>
             <div className="zone-dist">
-              {zoneRows.map((z, i) => {
-                const n = counts[z.name] || z.farmers || 0;
+              {divNames.map((d, i) => {
+                const n = byDiv[d];
                 const share = farmers ? Math.round((n / farmers) * 100) : 0;
                 const bar = ['amber', 'blue', ''][i % 3] || '';
                 return (
-                  <div className="zd-row" key={z.name}>
-                    <div className="zd-top"><b>{z.name}</b><span>{n} · {share}%</span></div>
+                  <div className="zd-row" key={d}>
+                    <div className="zd-top"><b>{d}</b><span>{n} · {share}%</span></div>
                     <div className={`zd-bar ${bar}`}><i style={{ width: `${share}%` }}></i></div>
                   </div>
                 );
               })}
             </div>
             <div style={{ marginTop: 16, fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>
-              {lead && (counts[lead] || 0) > 0
-                ? `${lead} has the largest farmer base (${counts[lead]} farmers).`
+              {lead && byDiv[lead] > 0
+                ? `${lead} has the largest farmer base (${byDiv[lead]} farmers).`
                 : 'Register farmers to see the per-zone breakdown.'}
             </div>
           </div>

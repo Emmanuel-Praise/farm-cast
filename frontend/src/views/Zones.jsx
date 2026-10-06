@@ -1,5 +1,5 @@
-import React from 'react';
-import { statusFor, zoneAlt } from '../components/shared.jsx';
+import React, { useState } from 'react';
+import { statusFor } from '../components/shared.jsx';
 
 function dayLabels(n) {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -26,7 +26,20 @@ function ZoneCard({ zone }) {
         <h3>{zone.zone}</h3>
         <span className={`chip ${st.kind}`}>{st.label}</span>
       </div>
-      <div className="alt">{zoneAlt(zone.zone, zone.elev_m, zone.localities)} · {zone.farmers} farmers</div>
+      <div className="alt">
+        {Number(zone.elev_m).toLocaleString()} m · {zone.division} · {zone.farmers} farmers
+      </div>
+      {zone.today?.headline ? (
+        <div className="mini" style={{ marginBottom: 12 }}>
+          <div className="k">Today</div>
+          <div className="v" style={{ fontSize: 15 }}>{zone.today.headline}</div>
+        </div>
+      ) : null}
+      {zone.outlook ? (
+        <div className="hint" style={{ marginBottom: 12, color: 'var(--text)', fontSize: 12.5 }}>
+          {zone.outlook}
+        </div>
+      ) : null}
       <div className="mini-stats">
         <div className="mini">
           <div className="k">48h rain</div>
@@ -57,6 +70,8 @@ function ZoneCard({ zone }) {
 }
 
 export default function ZonesView({ zones }) {
+  const [div, setDiv] = useState('All');
+  const [q, setQ] = useState('');
   if (!zones.length) {
     return (
       <div className="card">
@@ -64,11 +79,29 @@ export default function ZonesView({ zones }) {
       </div>
     );
   }
+  const divs = ['All', ...new Set(zones.map((z) => z.division))];
+  const list = zones.filter(
+    (z) =>
+      (div === 'All' || z.division === div) &&
+      (!q.trim() || z.zone.toLowerCase().includes(q.trim().toLowerCase())),
+  );
   return (
-    <div className="zone-grid">
-      {zones.map((z) => (
-        <ZoneCard key={z.zone} zone={z} />
-      ))}
-    </div>
+    <>
+      <div className="tokenbar">
+        <input placeholder="Search area…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="top-actions">
+          {divs.map((d) => (
+            <button key={d} className={'btn' + (div === d ? ' primary' : '')} onClick={() => setDiv(d)}>
+              {d}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="zone-grid">
+        {list.map((z) => (
+          <ZoneCard key={z.zone} zone={z} />
+        ))}
+      </div>
+    </>
   );
 }

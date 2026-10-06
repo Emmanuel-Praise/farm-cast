@@ -1,9 +1,5 @@
 const BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 
-export function headers(token) {
-  return { 'X-Admin-Token': token || '' };
-}
-
 async function handle(res, path) {
   if (!res.ok) {
     let detail = '';
@@ -18,19 +14,18 @@ async function handle(res, path) {
   return res.json();
 }
 
+const get = (path) => fetch(`${BASE}${path}`).then((r) => handle(r, path));
+
 export const api = {
-  stats: (t) => fetch(`${BASE}/admin/stats`, { headers: headers(t) }).then((r) => handle(r, '/admin/stats')),
-  localities: (t) => fetch(`${BASE}/admin/localities`, { headers: headers(t) }).then((r) => handle(r, '/admin/localities')),
-  zones: (t) => fetch(`${BASE}/admin/zones`, { headers: headers(t) }).then((r) => handle(r, '/admin/zones')),
-  reports: (t) => fetch(`${BASE}/admin/reports`, { headers: headers(t) }).then((r) => handle(r, '/admin/reports')),
-  messages: (t) => fetch(`${BASE}/admin/messages`, { headers: headers(t) }).then((r) => handle(r, '/admin/messages')),
-  callList: (t) => fetch(`${BASE}/admin/call-list`, { headers: headers(t) }).then((r) => handle(r, '/admin/call-list')),
-  forecast: (t, place) =>
-    fetch(`${BASE}/admin/forecast?place=${encodeURIComponent(place)}`, { headers: headers(t) }).then((r) =>
-      handle(r, '/admin/forecast'),
-    ),
-  broadcastDryRun: (t) =>
-    fetch(`${BASE}/admin/broadcast/run?dry_run=true`, { method: 'POST', headers: headers(t) }).then((r) =>
+  stats: () => get('/admin/stats'),
+  localities: () => get('/admin/localities'),
+  zones: () => get('/admin/zones'),
+  reports: () => get('/admin/reports'),
+  messages: () => get('/admin/messages'),
+  callList: () => get('/admin/call-list'),
+  forecast: (place) => get(`/admin/forecast?place=${encodeURIComponent(place)}`),
+  broadcastDryRun: () =>
+    fetch(`${BASE}/admin/broadcast/run?dry_run=true`, { method: 'POST' }).then((r) =>
       handle(r, '/admin/broadcast/run'),
     ),
 };

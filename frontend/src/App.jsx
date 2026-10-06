@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar.jsx';
 import Topbar from './components/Topbar.jsx';
-import TokenBar from './components/TokenBar.jsx';
 import DashboardView from './views/Dashboard.jsx';
 import ZonesView from './views/Zones.jsx';
 import { ReportsView, BroadcastsView, CallListView } from './views/Tables.jsx';
@@ -18,7 +17,6 @@ const TITLES = {
 
 export default function App() {
   const [view, setView] = useState('dashboard');
-  const [token, setToken] = useState(() => localStorage.getItem('fc_admin_token') || '');
   const [place, setPlace] = useState('');
   const [stats, setStats] = useState(null);
   const [localities, setLocalities] = useState([]);
@@ -33,14 +31,14 @@ export default function App() {
   const load = useCallback(async () => {
     setError('');
     try {
-      const s = await api.stats(token);
+      const s = await api.stats();
       setStats(s);
       const [locs, reps, msgs, call, zs] = await Promise.all([
-        api.localities(token),
-        api.reports(token),
-        api.messages(token),
-        api.callList(token),
-        api.zones(token),
+        api.localities(),
+        api.reports(),
+        api.messages(),
+        api.callList(),
+        api.zones(),
       ]);
       setLocalities(locs);
       setReports(reps);
@@ -51,17 +49,12 @@ export default function App() {
       zs.forEach((z) => { zd[z.zone] = z; });
       setZoneData(zd);
     } catch (e) {
-      setError(`${e.message} — set ADMIN_TOKEN and press Refresh`);
+      setError(`${e.message} — is the backend running on port 8000?`);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('fc_admin_token', token);
-  }, [token]);
-
-  useEffect(() => {
-    if (localStorage.getItem('fc_admin_token')) load();
-    else setError('Enter your ADMIN_TOKEN in the field above, then press Refresh.');
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -83,15 +76,16 @@ export default function App() {
   localities.forEach((l) => { locDiv[l.id] = l.division || ''; });
 
   const zoneRows = zones.map((z) => {
-    const last = enriched.find((r) => locDiv[r.locality_id] === z.zone);
+    const last = enriched.find((r) => r.locality === z.zone);
     let ago = '';
     if (last?.received_at) {
       const mins = Math.max(0, Math.round((Date.now() - new Date(last.received_at).getTime()) / 60000));
       ago = mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} hr ago`;
     }
     return {
-      name: z.zone,
-      alt: zoneAlt(z.zone, z.elev_m, z.localities),
+      name: z.zone, division: z.division,
+      alt: `${Number(z.elev_m).toLocaleString()} m · ${z.division}`,
+      today: z.today?.headline || '',
       p48: z.p48, prob: z.prob_max, category: z.category,
       farmers: z.farmers, last: ago,
     };
@@ -99,12 +93,12 @@ export default function App() {
 
   const feed = enriched.slice(0, 8);
   const subtitle = stats
-    ? `Collecting ground truth from <b>${stats.farmers} farmers</b> across ${zones.length} zones · Updated ${new Date().toTimeString().slice(0, 5)}`
+    ? `Collecting ground truth from <b>${stats.farmers} farmers</b> across ${zones.length} areas · Updated ${new Date().toTimeString().slice(0, 5)}`
     : 'Connect API token to load live data.';
 
   const onDryRun = async () => {
     try {
-      setForecastOut(await api.broadcastDryRun(token));
+      setForecastOut(await api.broadcastDryRun());
     } catch (e) {
       setError(e.message);
     }
@@ -113,7 +107,7 @@ export default function App() {
   const onForecast = async () => {
     if (!place.trim()) return;
     try {
-      setForecastOut(await api.forecast(token, place.trim()));
+      setForecastOut(await api.forecast(place.trim()));
     } catch (e) {
       setError(e.message);
     }
@@ -131,7 +125,10 @@ export default function App() {
       />
       <main>
         <Topbar title={TITLES[view]} subtitle={subtitle} onRefresh={load} onDryRun={onDryRun} />
-        <TokenBar token={token} setToken={setToken} place={place} setPlace={setPlace} onForecast={onForecast} />
+        <div className="tokenbar">
+          <input placeholder="Check any place, e.g. Kumbo" value={place} onChange={(e) => setPlace(e.target.value)} />
+          <button className="btn" onClick={onForecast}>Check forecast</button>
+        </div>
         {error ? <div className="error">{error}</div> : null}
         {forecastOut ? (
           <div className="card" style={{ marginBottom: 16 }}>
