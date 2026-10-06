@@ -57,7 +57,13 @@ function ZoneCard({ zone }) {
 }
 
 export default function ZonesView({ zones }) {
-  if (!zones.length) return <div className="card"><div className="hint">No zones yet.</div></div>;
+  if (!zones.length) {
+    return (
+      <div className="card">
+        <div className="hint">No zone data loaded yet — enter your ADMIN_TOKEN above and press Refresh.</div>
+      </div>
+    );
+  }
   return (
     <div className="zone-grid">
       {zones.map((z) => (

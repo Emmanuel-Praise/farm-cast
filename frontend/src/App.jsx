@@ -61,6 +61,7 @@ export default function App() {
 
   useEffect(() => {
     if (localStorage.getItem('fc_admin_token')) load();
+    else setError('Enter your ADMIN_TOKEN in the field above, then press Refresh.');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
