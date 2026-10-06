@@ -1,0 +1,20 @@
+# FarmCast — runbook
+# 1. Install
+pip install -r requirements.txt
+# 2. Init DB + seed (from Farm/ dir)
+python -c "from farmcast.db.repo import init_db, seed_localities; init_db(); print('seeded', seed_localities())"
+# 3. Offline tests (no network)
+python -m pytest farmcast/tests -q
+# 4. Live resolver / weather / rules (needs internet, no keys)
+python -m farmcast.resolve "kumbo"
+python -m farmcast.resolve "bali"
+python -m farmcast.weather --place Kumbo
+python -m farmcast.rules --place Kumbo --crop maize
+# 5. Frontend (React/Vite) + API dashboard (needs ADMIN_TOKEN in .env)
+# Dev: uvicorn farmcast.web.app:app --port 8000  +  cd frontend && npm install && npm run dev (proxy -> :8000)
+# Prod build (FastAPI serves it): cd frontend && npm run build
+# Dashboard: http://localhost:8000/dashboard/  (enter ADMIN_TOKEN, saved in browser)
+# 6. Cron on VPS (Africa/Douala)
+# 30 5 * * *  cd /opt/farmcast && python -m farmcast.broadcast
+# 30 6 * * *  cd /opt/farmcast && python -m farmcast.jobs.retry_queue
+# 0  6 * * *  cd /opt/farmcast && python -m farmcast.jobs.ground_truth_prompt  (next-day ask; adjust to -1day logic)

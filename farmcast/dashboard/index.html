@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FarmCast — NW Cameroon Agent Console</title>
+<style>
+  :root{--green-900:#0b2419;--green-800:#0f2e20;--green-700:#14503a;--green-600:#1a7a4c;--green-500:#22a05f;--lime:#8fd694;--amber:#d99a00;--amber-bg:#fdf3dd;--red:#c0392b;--red-bg:#fdecea;--blue:#2b5fa8;--blue-bg:#e9f0fb;--bg:#f3f7f4;--card:#ffffff;--text:#16241c;--muted:#6d8075;--border:#e3ebe5;--radius:14px;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;}
+  .layout{display:flex;min-height:100vh;}
+  .sidebar{width:250px;flex-shrink:0;background:var(--green-800);color:#cfe3d5;padding:20px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;}
+  .brand{display:flex;align-items:center;gap:11px;padding:0 6px 18px;border-bottom:1px solid rgba(255,255,255,.1);}
+  .brand .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--green-500),var(--lime));display:grid;place-items:center;color:#0b2419;font-weight:900;}
+  .brand strong{display:block;color:#fff;font-size:15px;}
+  .brand small{font-size:11px;color:#8fae9d;}
+  .side-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:#7b9b8a;font-weight:700;margin:20px 8px 8px;}
+  nav{display:flex;flex-direction:column;gap:3px;}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;color:#cfe3d5;font-size:13.5px;cursor:pointer;border:none;background:none;font-family:inherit;width:100%;text-align:left;}
+  .nav-item:hover{background:rgba(255,255,255,.07);color:#fff;}
+  .nav-item.active{background:var(--green-600);color:#fff;font-weight:600;}
+  .nav-item .badge{margin-left:auto;background:rgba(255,255,255,.16);font-size:11px;padding:1px 8px;border-radius:99px;font-weight:700;}
+  .side-foot{margin-top:auto;padding:14px 10px 4px;border-top:1px solid rgba(255,255,255,.1);font-size:11.5px;color:#8fae9d;}
+  main{flex:1;min-width:0;padding:24px 26px 40px;}
+  .topbar{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;margin-bottom:20px;}
+  .topbar h1{font-size:21px;}
+  .topbar p{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .top-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;}
+  .btn{border:1px solid var(--border);background:#fff;color:var(--text);padding:8px 15px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px;}
+  .btn.primary{background:var(--green-600);color:#fff;border-color:var(--green-600);}
+  .view{display:none;} .view.active{display:block;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px;}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 17px;}
+  .kpi .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;margin-bottom:8px;}
+  .kpi .val{font-size:28px;font-weight:700;color:var(--green-800);}
+  .kpi .sub{font-size:12px;color:var(--muted);margin-top:6px;}
+  .cols{display:grid;grid-template-columns:1.65fr 1fr;gap:16px;align-items:start;}
+  .col{display:flex;flex-direction:column;gap:16px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;}
+  .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;}
+  .card h2{font-size:14px;} .card .hint{font-size:11.5px;color:var(--muted);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 10px 10px 0;border-bottom:1px solid var(--border);}
+  td{padding:12px 10px 12px 0;border-bottom:1px solid #f0f5f1;}
+  .chip{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;white-space:nowrap;}
+  .chip.ok{background:#e5f6ec;color:#12693a;} .chip.warn{background:var(--amber-bg);color:#8a6100;}
+  .chip.dry{background:var(--blue-bg);color:#2b5fa8;} .chip.bad{background:var(--red-bg);color:#93291d;}
+  .chip.neutral{background:#eef2ef;color:var(--muted);}
+  .feed-item{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid #f0f5f1;}
+  .avatar{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:12px;font-weight:700;background:#e5f6ec;color:#12693a;}
+  .feed-body{flex:1;} .feed-msg{font-size:12.8px;color:#3d5045;margin-top:2px;}
+  .feed-meta{font-size:11px;color:var(--muted);margin-top:4px;}
+  .tokenbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+  .tokenbar input{flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:9px;font-family:inherit;}
+  @media(max-width:960px){.cols{grid-template-columns:1fr;}}
+  @media(max-width:820px){.layout{flex-direction:column;}.sidebar{width:100%;height:auto;position:static;}main{padding:18px 16px 34px;}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><div class="logo">FC</div><div><strong>FarmCast</strong><small>NW Cameroon Agent</small></div></div>
+    <div class="side-label">Console</div>
+    <nav>
+      <button class="nav-item active" data-view="dashboard" data-title="System Overview">Dashboard</button>
+      <button class="nav-item" data-view="reports" data-title="Farmer Reports">Farmer Reports <span class="badge" id="navReports">–</span></button>
+      <button class="nav-item" data-view="zones" data-title="Localities">Localities <span class="badge" id="navLocs">–</span></button>
+      <button class="nav-item" data-view="broadcasts" data-title="Broadcast Runs">Broadcasts</button>
+      <button class="nav-item" data-view="calllist" data-title="Call List">Call list <span class="badge" id="navCall">–</span></button>
+    </nav>
+    <div class="side-foot"><div>Next broadcast · 6:00 AM Africa/Douala</div><div id="apiState">API: not connected</div></div>
+  </aside>
+  <main>
+    <div class="topbar">
+      <div><h1 id="pageTitle">System Overview</h1><p id="subtitle">Connect API token to load live data.</p></div>
+      <div class="top-actions">
+        <button class="btn" id="refreshBtn">Refresh</button>
+        <button class="btn primary" id="dryBtn">Dry-run broadcast</button>
+      </div>
+    </div>
+    <div class="tokenbar">
+      <input id="token" type="password" placeholder="ADMIN_TOKEN (from .env)">
+      <input id="place" placeholder="Test place e.g. Kumbo">
+      <button class="btn" id="forecastBtn">Check forecast</button>
+    </div>
+    <div id="forecastOut" class="card" style="display:none;margin-bottom:16px;"></div>
+
+    <div class="view active" id="view-dashboard">
+      <div class="kpis">
+        <div class="kpi"><div class="lbl">Total farmers</div><div class="val" id="kFarmers">–</div><div class="sub" id="kLocs">– localities</div></div>
+        <div class="kpi"><div class="lbl">Ground reports today</div><div class="val" id="kReports">–</div><div class="sub">farmer YES/NO replies</div></div>
+        <div class="kpi"><div class="lbl">Alerts delivered</div><div class="val" id="kSent">–</div><div class="sub" id="kFail">– failed</div></div>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <div class="card"><div class="card-head"><div><h2>Locality monitor</h2><div class="hint">Dynamic — every village, not 3 fixed zones</div></div><span class="chip neutral">Live</span></div>
+            <table><thead><tr><th>Locality</th><th>Farmers</th><th>Division</th></tr></thead><tbody id="locTable"><tr><td colspan="3">No data.</td></tr></tbody></table>
+          </div>
+          <div class="card"><div class="card-head"><div><h2>Incoming ground reports</h2></div><span class="chip ok" id="repCount">–</span></div><div id="feed"><div class="hint">No data.</div></div></div>
+        </div>
+        <div class="col">
+          <div class="card"><div class="card-head"><h2>Today's 6 AM broadcast</h2><span class="chip ok">WhatsApp text-only</span></div><div id="bcast">No data.</div></div>
+          <div class="card"><div class="card-head"><h2>Farmers per locality</h2></div><div id="dist">No data.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="view" id="view-reports"><div class="card"><div class="card-head"><h2>All ground reports</h2></div><table><thead><tr><th>ID</th><th>Farmer</th><th>Reply</th><th>Text</th><th>Date</th></tr></thead><tbody id="repTable"></tbody></table></div></div>
+    <div class="view" id="view-zones"><div class="card"><div class="card-head"><h2>Localities</h2></div><table><thead><tr><th>Name</th><th>Division</th><th>Lat/Lon</th><th>Elev</th><th>Source</th></tr></thead><tbody id="zoneTable"></tbody></table></div></div>
+    <div class="view" id="view-broadcasts"><div class="card"><div class="card-head"><h2>Recent messages</h2></div><table><thead><tr><th>ID</th><th>Farmer</th><th>Kind</th><th>Status</th><th>Body</th></tr></thead><tbody id="msgTable"></tbody></table></div></div>
+    <div class="view" id="view-calllist"><div class="card"><div class="card-head"><h2>Call list (failed after retry)</h2></div><table><thead><tr><th>Farmer</th><th>Phone</th><th>Reason</th></tr></thead><tbody id="callTable"></tbody></table></div></div>
+  </main>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const navItems=document.querySelectorAll('.nav-item');
+navItems.forEach(b=>b.onclick=()=>{navItems.forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));$('view-'+b.dataset.view).classList.add('active');$('pageTitle').textContent=b.dataset.title;});
+const H=()=>({'X-Admin-Token':$('token').value});
+async function api(p){const r=await fetch(p,{headers:H()});if(!r.ok)throw new Error(r.status+' '+p);return r.json();}
+async function load(){
+  try{
+    const s=await api('/admin/stats');
+    $('apiState').textContent='API: connected · '+s.date;
+    $('kFarmers').textContent=s.farmers; $('kLocs').textContent=s.localities+' localities';
+    $('kReports').textContent=s.reports_today; $('kSent').textContent=s.sent_today; $('kFail').textContent=s.failed_today+' failed';
+    $('navReports').textContent=s.reports_today; $('navCall').textContent=s.call_list_open;
+    $('locTable').innerHTML=s.per_locality.map(l=>`<tr><td><b>${l.name}</b></td><td>${l.n}</td><td>${l.division||''}</td></tr>`).join('')||'<tr><td colspan=3>No farmers yet.</td></tr>';
+    $('dist').innerHTML=s.per_locality.slice(0,10).map(l=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #e3ebe5"><span>${l.name}</span><b>${l.n}</b></div>`).join('');
+    $('feed').innerHTML=s.recent_reports.map(r=>`<div class="feed-item"><div class="avatar">${(r.farmer_name||'?').slice(0,2).toUpperCase()}</div><div class="feed-body"><b>${r.farmer_name||('farmer '+r.farmer_id)}</b> <span class="chip ${r.reply==='YES'?'ok':'dry'}">${r.reply}</span><div class="feed-msg">${r.raw_text||''}</div><div class="feed-meta">${r.received_at||''}</div></div></div>`).join('')||'No reports.';
+    $('repCount').textContent=s.reports_today+' today';
+    $('bcast').innerHTML=`<div>Sent/delivered today: <b>${s.sent_today}</b></div><div>Failed: <b>${s.failed_today}</b></div><div>Open call list: <b>${s.call_list_open}</b></div>`;
+    const locs=await api('/admin/localities'); $('navLocs').textContent=locs.length;
+    $('zoneTable').innerHTML=locs.map(l=>`<tr><td><b>${l.name}</b></td><td>${l.division||''}</td><td>${l.lat}, ${l.lon}</td><td>${l.elevation_m||''}m</td><td>${l.source||''}${l.verified?' ✓':''}</td></tr>`).join('');
+    const reps=await api('/admin/reports'); $('repTable').innerHTML=reps.slice(0,100).map(r=>`<tr><td>${r.id}</td><td>${r.farmer_id}</td><td><span class="chip ${r.reply==='YES'?'ok':'dry'}">${r.reply}</span></td><td>${r.raw_text||''}</td><td>${r.asked_for_date||''}</td></tr>`).join('');
+    const msgs=await api('/admin/messages'); $('msgTable').innerHTML=msgs.slice(0,100).map(m=>`<tr><td>${m.id}</td><td>${m.farmer_id}</td><td>${m.kind}</td><td>${m.status}</td><td>${(m.text_body||'').slice(0,120)}</td></tr>`).join('');
+    const call=await api('/admin/call-list'); $('callTable').innerHTML=call.map(c=>`<tr><td>${c.name||c.farmer_id}</td><td>${c.phone||''}</td><td>${c.reason}</td></tr>`).join('')||'<tr><td colspan=3>Empty — good.</td></tr>';
+    $('subtitle').textContent=`${s.farmers} farmers across ${s.localities} localities · ${s.date}`;
+  }catch(e){$('apiState').textContent='API error: '+e.message+' (set ADMIN_TOKEN, run uvicorn)'; }
+}
+$('refreshBtn').onclick=load;
+$('dryBtn').onclick=async()=>{try{const r=await fetch('/admin/broadcast/run?dry_run=true',{method:'POST',headers:H()});alert(JSON.stringify(await r.json()));load();}catch(e){alert(e.message);}};
+$('forecastBtn').onclick=async()=>{try{const j=await api('/admin/forecast?place='+encodeURIComponent($('place').value));$('forecastOut').style.display='block';$('forecastOut').innerHTML='<pre>'+JSON.stringify(j,null,2).slice(0,2000)+'</pre>';}catch(e){alert(e.message);}};
+load();
+</script>
+</body>
+</html>
