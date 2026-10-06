@@ -88,3 +88,11 @@ CREATE TABLE IF NOT EXISTS call_list (
   created_at    TEXT DEFAULT (datetime('now')),
   resolved      INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS onboarding (
+  phone         TEXT PRIMARY KEY,
+  step          TEXT,              -- 'name' | 'location'
+  name          TEXT,
+  options       TEXT,              -- JSON locality options when place was ambiguous
+  created_at    TEXT DEFAULT (datetime('now'))
+);

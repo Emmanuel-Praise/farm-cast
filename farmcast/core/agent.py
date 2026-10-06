@@ -217,6 +217,154 @@ def _log(farmer_id: int, raw: str, intent: str, lid, body: str, fid=None):
         print(f"[agent] log failed: {e}")
 
 
+def extract_name(text: str) -> str | None:
+    """Pull a plausible name out of a reply. Data extraction, not a response."""
+    s = (text or "").strip()
+    s = re.sub(r"(?i)\b(my name is|my names are|i am|i'm|im |this is|call me)\b", " ", s)
+    s = re.sub(r"[?.,!0-9]", " ", s)
+    s = " ".join(s.split())
+    if not re.fullmatch(r"[A-Za-z][A-Za-z '\-]{1,39}", s):
+        return None
+    greetings = {"hello", "hi", "hey", "morning", "afternoon", "evening",
+                 "yes", "no", "ok", "okay", "thanks", "thank you", "good"}
+    if all(w in greetings for w in s.lower().split()):
+        return None
+    return s.title()
+
+
+def _onboard_get(phone: str) -> dict | None:
+    con = repo.connect()
+    row = con.execute("SELECT * FROM onboarding WHERE phone=?", (phone,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def _onboard_save(phone: str, step: str, name: str = "", options: list | None = None):
+    con = repo.connect()
+    con.execute("INSERT INTO onboarding(phone,step,name,options) VALUES(?,?,?,?) "
+                "ON CONFLICT(phone) DO UPDATE SET step=excluded.step, name=excluded.name,"
+                " options=excluded.options",
+                (phone, step, name, json.dumps(options or [])))
+    con.commit()
+    con.close()
+
+
+def _onboard_done(phone: str):
+    con = repo.connect()
+    con.execute("DELETE FROM onboarding WHERE phone=?", (phone,))
+    con.commit()
+    con.close()
+
+
+def _onboard_ask_place(text: str) -> str | None:
+    """Model extracts the village/town from a free-form reply. Falls back to keywords."""
+    out = ai_client.chat_raw(
+        "Extract the village, town or area name from the message. "
+        "Return ONLY JSON: {\"place\": \"name or null\"}.",
+        f"MESSAGE: {text}")
+    if out:
+        m = re.search(r"\{.*\}", out, re.DOTALL)
+        if m:
+            try:
+                p = json.loads(m.group(0)).get("place")
+                if p:
+                    return str(p)
+            except Exception:
+                pass
+    from farmcast.web.webhook_whatsapp import extract_place
+    return extract_place(text) or None
+
+
+def _handle_new_sender(phone: str, text: str) -> str:
+    """Auto-registration: first text -> name -> location -> daily reports."""
+    ob = _onboard_get(phone)
+    if not ob:
+        _onboard_save(phone, "name")
+        out = ai_client.chat_raw(
+            COMPOSE_SYSTEM,
+            "Someone just texted FarmCast for the first time. Welcome them warmly "
+            "and ask their name. Max 300 characters.")
+        return out.strip() if out else "Welcome to FarmCast. What is your name?"
+
+    if ob["step"] == "name":
+        name = extract_name(text)
+        if not name:
+            out = ai_client.chat_raw(
+                COMPOSE_SYSTEM,
+                f"I asked a new farmer for their name and they replied: {text}\n"
+                "Ask for their name again, simply.")
+            return out.strip() if out else "Sorry, I didn't get your name. What is your name?"
+        _onboard_save(phone, "location", name=name)
+        out = ai_client.chat_raw(
+            COMPOSE_SYSTEM,
+            f"New farmer {name} just gave their name. Greet them by name and ask "
+            "which village or town their farm is in. Max 300 characters.")
+        return out.strip() if out else f"Thanks {name}. Which village or town is your farm in?"
+
+    # step == location
+    name = ob.get("name") or "farmer"
+    if ob.get("options"):
+        try:
+            options = json.loads(ob["options"])
+        except Exception:
+            options = []
+        sel = _pick_option(text, options)
+        if sel:
+            return _finish_onboarding(phone, name, sel)
+    place = _onboard_ask_place(text)
+    if not place:
+        out = ai_client.chat_raw(
+            COMPOSE_SYSTEM,
+            f"{name} replied '{text}' when asked for their village. "
+            "Ask again for the village or town name.")
+        return out.strip() if out else f"{name}, which village or town is your farm in?"
+    res = resolve_location(place)
+    if res.status == "ok":
+        L = res.locality
+        return _finish_onboarding(phone, name,
+                                  {"name": L.name, "lat": L.lat, "lon": L.lon,
+                                   "elevation_m": L.elevation_m, "division": L.division})
+    if res.status == "ambiguous":
+        opts = [{"name": o.name, "lat": o.lat, "lon": o.lon,
+                 "elevation_m": o.elevation_m, "division": o.division}
+                for o in res.options[:5]]
+        _onboard_save(phone, "location", name=name, options=opts)
+        body = _compose({"name": name, "crop": "maize", "area": opts[0]["name"]},
+                        text, options=opts)
+        return body or f"Which one do you mean, {name}? Reply with the number."
+    out = ai_client.chat_raw(
+        COMPOSE_SYSTEM,
+        f"{name} said their farm is in '{place}' but I can't find that place. "
+        "Ask them to try another nearby village or town name.")
+    return out.strip() if out else f"I couldn't find '{place}'. Try another nearby village name."
+
+
+def _finish_onboarding(phone: str, name: str, sel: dict) -> str:
+    lid = repo.get_or_create_locality(sel["name"], sel["lat"], sel["lon"],
+                                      sel.get("elevation_m") or 0,
+                                      sel.get("division") or "")
+    con = repo.connect()
+    con.execute("INSERT OR IGNORE INTO farmers(phone,name,locality_id,crop,language)"
+                " VALUES(?,?,?,?,?)", (phone, name, lid, "maize", "english"))
+    con.execute("UPDATE farmers SET active=1, locality_id=? WHERE phone=?", (lid, phone))
+    con.commit()
+    con.close()
+    _onboard_done(phone)
+    farmer = repo.find_farmer_by_phone(phone)
+    payload = _weather_payload({"name": sel["name"], "lat": sel["lat"],
+                                "lon": sel["lon"],
+                                "elevation_m": sel.get("elevation_m") or 0,
+                                "division": sel.get("division") or "", "id": lid},
+                               "48h", "maize")
+    body = _compose({"name": name, "crop": "maize", "area": sel["name"]},
+                    "registration complete", weather=payload)
+    if body:
+        _log(farmer["id"], "registration", "REGISTER", lid, body,
+             payload["forecast_id"])
+        return body
+    return (f"Welcome {name}. You will now get a weather report every morning "
+            f"at 6 o'clock for {sel['name']}.")
+
 def respond(phone: str, text: str) -> str:
     """Main entry: model-first reply. Never raises; never returns empty."""
     text = (text or "").strip()
@@ -224,18 +372,31 @@ def respond(phone: str, text: str) -> str:
         return "I didn't catch that. Please send your message again."
     farmer = repo.find_farmer_by_phone(phone)
     if not farmer:
-        # Not registered: model explains (no template).
-        out = ai_client.chat_raw(
-            COMPOSE_SYSTEM,
-            f"An unregistered person wrote: {text}\n"
-            "Tell them warmly you can't look up their farm yet and they should "
-            "ask a FarmCast field agent to register their name, phone, village and crop. "
-            "Max 400 characters.")
-        return out.strip() if out else "Please contact a FarmCast field agent to register first."
+        # Auto-registration: no manual entry, onboarding over chat.
+        try:
+            return _handle_new_sender(phone, text)
+        except Exception as e:
+            print(f"[agent] onboarding failed: {e}")
+            return "Welcome to FarmCast. What is your name?"
+
+    # Crop update: "my crop is beans"
+    m = re.match(r"(?i)^my crop is (.+?)[?.!]*$", text.strip())
+    if m:
+        crop = m.group(1).strip().lower()
+        if crop in crops_cfg.SUPPORTED_CROPS:
+            try:
+                con = repo.connect()
+                con.execute("UPDATE farmers SET crop=? WHERE id=?", (crop, farmer["id"]))
+                con.commit()
+                con.close()
+            except Exception as e:
+                print(f"[agent] crop update failed: {e}")
+            farmer["crop"] = crop
+            body = _compose(_ctx(farmer),
+                            f"The farmer now grows {crop}. Confirm briefly.")
+            return body or f"Noted. I will give you advice for {crop} from now on."
 
     ctx = _ctx(farmer)
-
-    # Fast path 1: pending clarification (numbered choice from last turn).
     pend, options = _pending_options(farmer["id"])
     if options:
         sel = _pick_option(text, options)
